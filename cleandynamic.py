@@ -2,6 +2,7 @@ import fitz  # PyMuPDF
 import os
 
 def find_text_position(page, text):
+    # Perform a case-insensitive search
     text_instances = page.search_for(text)
     if text_instances:
         return text_instances[0]  # Return the first occurrence
@@ -36,48 +37,74 @@ def create_unique_filename(base_name, extension):
 input_pdf = fitz.open("input.pdf")
 
 # Create a new PDF to store the combined page
-output_pdf = fitz.open()
+temp_pdf = fitz.open()
 
 # Calculate the dimensions for the new page
 page1 = input_pdf[0]
 page2 = input_pdf[1]
 width = page1.rect.width
 
-# Find positions of "GitHub" and "LinkedIn" to determine trim height
-github_position_page2 = find_text_position(page2, "GitHub")
-linkedin_position_page2 = find_text_position(page2, "LinkedIn")
-
-if linkedin_position_page2:
-    page2_trim_height = linkedin_position_page2.y1 + 28.35  # 1 cm below the bottom of the LinkedIn link (28.35 points = 1 cm)
-else:
-    page2_trim_height = 430  # Default value if LinkedIn position is not found
-
-combined_height = page1.rect.height + page2_trim_height - 2  # Adjusted to remove the bottom line
-
-# Create a new page with the combined height
-combined_page = output_pdf.new_page(width=width, height=combined_height)
+# Create a temporary combined PDF
+combined_height_temp = page1.rect.height + page2.rect.height
+combined_page_temp = temp_pdf.new_page(width=width, height=combined_height_temp)
 
 # Insert the first page at the top
-combined_page.show_pdf_page(fitz.Rect(0, 0, width, page1.rect.height), input_pdf, 0)
+combined_page_temp.show_pdf_page(fitz.Rect(0, 0, width, page1.rect.height), input_pdf, 0)
 
-# Insert the second page slightly overlapping the first page to avoid lines
-combined_page.show_pdf_page(fitz.Rect(0, page1.rect.height - 1, width, page1.rect.height - 1 + page2_trim_height), input_pdf, 1, clip=fitz.Rect(0, 1, width, page2_trim_height))
+# Insert the second page below the first page
+combined_page_temp.show_pdf_page(fitz.Rect(0, page1.rect.height, width, combined_height_temp), input_pdf, 1)
+
+# Save the temporary combined PDF
+temp_combined_filename = "tempComb.pdf"
+temp_pdf.save(temp_combined_filename)
+temp_pdf.close()
+
+# Reopen the temporary combined PDF for text search
+temp_combined_pdf = fitz.open(temp_combined_filename)
+combined_page = temp_combined_pdf[0]
 
 # Find positions of "GitHub" and "LinkedIn" on the combined page
 github_position_combined = find_text_position(combined_page, "GitHub")
 linkedin_position_combined = find_text_position(combined_page, "LinkedIn")
 
-# Insert dynamic links
-insert_dynamic_links(combined_page, github_position_combined, linkedin_position_combined)
+# Debug prints for combined positions
+print(f"GitHub position on combined page: {github_position_combined}")
+print(f"LinkedIn position on combined page: {linkedin_position_combined}")
+
+# Calculate the trim height for page 2 based on the combined page
+if linkedin_position_combined:
+    page2_trim_height = linkedin_position_combined.y1 - page1.rect.height + 28.35  # 1 cm below the bottom of the LinkedIn link
+else:
+    page2_trim_height = 430  # Default value if LinkedIn position is not found
+
+print(f"Page 2 trim height: {page2_trim_height}")
+
+# Create the final output PDF with the correct trim height
+output_pdf = fitz.open()
+combined_height = page1.rect.height + page2_trim_height - 2  # Adjusted to remove the bottom line
+final_combined_page = output_pdf.new_page(width=width, height=combined_height)
+
+# Insert the first page at the top
+final_combined_page.show_pdf_page(fitz.Rect(0, 0, width, page1.rect.height), input_pdf, 0)
+
+# Insert the second page slightly overlapping the first page to avoid lines
+final_combined_page.show_pdf_page(fitz.Rect(0, page1.rect.height - 1, width, page1.rect.height - 1 + page2_trim_height), input_pdf, 1, clip=fitz.Rect(0, 1, width, page2_trim_height))
+
+# Insert dynamic links on the final combined page
+insert_dynamic_links(final_combined_page, github_position_combined, linkedin_position_combined)
 
 # Generate a unique output filename
 output_filename = create_unique_filename("output", ".pdf")
 
-# Save the combined PDF
+# Save the final combined PDF
 output_pdf.save(output_filename)
-
-# Close the documents
-input_pdf.close()
 output_pdf.close()
+
+# Close the temporary combined PDF and delete it
+temp_combined_pdf.close()
+os.remove(temp_combined_filename)
+
+# Close the input PDF
+input_pdf.close()
 
 print(f"Combined PDF saved as {output_filename}")
